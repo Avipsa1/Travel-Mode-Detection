@@ -4,115 +4,134 @@ library(caret)
 library(dplyr)
 library(ggplot2)
 library(gridExtra)
-setwd("C:/Users/aroy29/Dropbox (ASU)/INTERACT Travel Mode Detection/Avipsa_Analysis/Travel-Mode-Detection/Data/")
+setwd("C:/Users/aroy29/Dropbox (ASU)/INTERACT Travel Mode Detection/Data/")
 
-#Read training data for different feature set combinations
-all_train_data <- read.csv("GPS_GIS_TrainingData_Mar03_2021.csv")[,-c(1,2)]
-gps_train_data <- read.csv("GPS_TrainingData_Mar03_2021.csv")[,-c(1)]
-gis_train_data <- read.csv("GIS_TrainingData_Mar03_2021.csv")[,-c(1)]
-
-str(all_train_data)
-str(gps_train_data)
-str(gis_train_data)
-
-#Change categorical variables to numbers
-all_train_data$timeOfDay <- as.numeric(all_train_data$timeOfDay)
-all_train_data$season <- as.numeric(all_train_data$season)
-all_train_data$city <- as.numeric(all_train_data$city)
-
-gps_train_data$timeOfDay <- as.numeric(gps_train_data$timeOfDay)
-gps_train_data$season <- as.numeric(gps_train_data$season)
-gps_train_data$city <- as.numeric(gps_train_data$city)
-
-gis_train_data$timeOfDay <- as.numeric(gis_train_data$timeOfDay)
-gis_train_data$season <- as.numeric(gis_train_data$season)
-gis_train_data$city <- as.numeric(gis_train_data$city)
-
-
-#Read test data for different feature set combinations
-all_test_data <- read.csv("GPS_GIS_TestData_Mar03_2021.csv")[,-c(1,2)]
-gps_test_data <- read.csv("GPS_TestData_Mar03_2021.csv")[,-c(1)]
-gis_test_data <- read.csv("GIS_TestData_Mar03_2021.csv")[,-c(1)]
-
-str(all_test_data)
-str(gps_test_data)
-str(gis_test_data)
-
-#Change categorical variables to numbers
-all_test_data$timeOfDay <- as.numeric(all_test_data$timeOfDay)
-all_test_data$season <- as.numeric(all_test_data$season)
-all_test_data$city <- as.numeric(all_test_data$city)
-
-gps_test_data$timeOfDay <- as.numeric(gps_test_data$timeOfDay)
-gps_test_data$season <- as.numeric(gps_test_data$season)
-gps_test_data$city <- as.numeric(gps_test_data$city)
-
-gis_test_data$timeOfDay <- as.numeric(gis_test_data$timeOfDay)
-gis_test_data$season <- as.numeric(gis_test_data$season)
-gis_test_data$city <- as.numeric(gis_test_data$city)
-
-#Replace NA values with 0
-all_train_data[is.na(all_train_data)] <- 0
-gps_train_data[is.na(gps_train_data)] <- 0
-gis_train_data[is.na(gis_train_data)] <- 0
-all_test_data[is.na(all_test_data)] <- 0
-gps_test_data[is.na(gps_test_data)] <- 0
-gis_test_data[is.na(gis_test_data)] <- 0
-
-#Set up a 10 fold cross validation for training all models
-train.control <- trainControl(method = "cv", number = 10, classProbs = TRUE)
-#Allow smote sampling to account for skew among classes
-train.control$sampling <- "smote"
-
-#Random Forest
-rf.model.all <- train(mode ~., data = all_train_data, method = "rf",
-                      metric="ROC",trControl = train.control,na.action = na.exclude)
-save(rf.model.all,"../Results/RF_model_all_features.Rdata")
-rf.model.gps <- train(mode ~., data = gps_train_data, method = "rf",
-                      metric="ROC",trControl = train.control,na.action = na.exclude)
-save(rf.model.gps,"../Results/RF_model_gps_features.Rdata")
-rf.model.gis <- train(mode ~., data = gis_train_data, method = "rf",
-                      metric="ROC",trControl = train.control,na.action = na.exclude)
-save(rf.model.gis,"../Results/RF_model_gis_features.Rdata")
-
-#SVM with Linear kernel
-svmL.model.all <- train(mode ~., data = all_train_data, method = "svmLinear2",
-                    metric="ROC",trControl = train.control,na.action = na.exclude)
-svmL.model.gps <- train(mode ~., data = gps_train_data, method = "svmLinear2",
-                        metric="ROC",trControl = train.control,na.action = na.exclude)
-svmL.model.gis <- train(mode ~., data = gis_train_data, method = "svmLinear2",
-                        metric="ROC",trControl = train.control,na.action = na.exclude)
-save(svmL.model.all,"../Results/SVMLinear_model_all_features.Rdata")
-save(svmL.model.gps,"../Results/SVMLinear_model_gps_features.Rdata")
-save(svmL.model.gis,"../Results/SVMLinear_model_gis_features.Rdata")
-
-#SVM with Radial kernel
-svmR.model.all <- train(mode ~ ., data = all_train_data,method = "svmRadial",
-                    verbose = FALSE,metric = "ROC",trControl = train.control,na.action = na.exclude)
-svmR.model.gps <- train(mode ~ ., data = gps_train_data[,-c(1:2)],method = "svmRadial",
-                    verbose = FALSE,metric = "ROC",trControl = train.control,na.action = na.exclude)
-svmR.model.gis <- train(mode ~ ., data = gis_train_data[,-c(1:2)],method = "svmRadial",
-                    verbose = FALSE,metric = "ROC",trControl = train.control,na.action = na.exclude)
-
-#Gradient Boosting
-xgb.model.all <- train(mode ~., data = all_train_data, method = "xgbTree",
-                    trControl = train.control,na.action = na.exclude)
-xgb.model.gps <- train(mode ~., data = gps_train_data, method = "xgbTree",
-                       trControl = train.control,na.action = na.exclude)
-xgb.model.gis <- train(mode ~., data = gis_train_data, method = "xgbTree",
-                       trControl = train.control,na.action = na.exclude)
+#Function to split input features into Acc/GPS/GIS feature set combinations with specific window sizes
+createFeatureSets <- function(window_size,featureSet)
+{
+  print("Reading raw features from file..")
+  #Read raw features from CSV files
+  acc_features = read.csv(paste("Acc_calculated_features_window_size_",window_size,"_July28.csv",sep=""))
+  gps_features = read.csv(paste("GPS_calculated_features_window_size_",window_size,"_July28.csv",sep=""))
+  gis_features = read.csv(paste("GIS_calculated_features_window_size_",window_size,"_July28.csv",sep=""))
   
-#Neural network
-nnet.model.all <- train(mode ~., data = all_train_data, method = "mlp",
-                    trControl = train.control,na.action = na.exclude)
-nnet.model.gps <- train(mode ~., data = gps_train_data, method = "mlp",
-                    trControl = train.control,na.action = na.exclude)
-nnet.model.gis <- train(mode ~., data = gis_train_data, method = "mlp",
-                    trControl = train.control,na.action = na.exclude)
+  #Create feature sets
+  print(paste("Creating feature subsets for window size..",window_size))
+  if(featureSet=='GPS_only')
+  {
+    #1. GPS_only
+    input.features = gps_features[,-c(1)]
+    print("GPS only features created!")
+  }
+ else if(featureSet=='GPS_Acc')
+ {
+  #2. GPS_Acc
+  input.features = cbind(acc_features[,-c(1)],gps_features[,-c(1,26)])
+  print("GPS & Accelerometer features created!")
+ }
+  else if(featureSet=='GPS_Acc_GIS')
+  {
+  #3. GPS_Acc_GIS
+  input.features = cbind(acc_features[,-c(1)],gps_features[,-c(1,26)],gis_features[,-c(1,44)])
+  print("GPS, Accelerometer and GIS features created!")
+  }
+  else if(featureSet=='GPS_GIS')
+  {
+    #4. GPS_GIS
+    input.features = cbind(gps_features[,-c(1)],gis_features[,-c(1,44)])
+    print("GPS and GIS features created!")
+  }
+  else if(featureSet=='Acc_only')
+  {
+    #5. Acc_only
+    input.features = acc_features[,-c(1)]
+    print("Accelerometer features created!")
+  }
+  else
+  {
+  #6. Acc_GIS
+  input.features = cbind(acc_features[,-c(1)],gis_features[,-c(1,44)])
+  print("Accelerometer Features created!")
+  }
+  print('Feature subset creation complete..')
+  #print(head(input.features))
+  return(input.features)
+  
+}
 
-save(nnet.model.all,"../Results/NeuralNet_model_all_features.Rdata")
-save(nnet.model.gps,"../Results/NeuralNet_model_gps_features.Rdata")
-save(nnet.model.gis,"../Results/NeuralNet_model_gis_features.Rdata")
+#Function to fit multiple models using input features with a specific window size
+fit_models <- function(clf,featureSet,window_size)
+{
+  set.seed(123)
+  data <- createFeatureSets(window_size,featureSet)
+  data[is.na(data)] <- 0
+  print(paste("No. of rows in original data=",nrow(data)))
+  print("Generating Training sample:")
+  x = createDataPartition(data$Mode,p=0.7, list = FALSE, times = 1) #Create a 70:30 split
+  train_data <- data[x,]
+  print(paste("No. of rows in training set =",nrow(train_data)))
+  print(paste("Train classes:",table(train_data$Mode)))
+  test_data <- data[x,]
+  print(paste("Test classes:",table(test_data$Mode)))
+  write.csv(train_data,paste(featureSet,"ws",window_size,"train_July28.csv",sep="_"))
+  write.csv(test_data,paste(featureSet,"ws",window_size,"test_July28.csv",sep="_"))
+  
+  #Set up a 10 fold cross validation for training all models
+  train.control <- trainControl(method = "repeatedcv", 
+                                number = 10, repeats = 3)
+  if(clf=='svmLW')
+  {
+    print("Fitting Random forest model begins..")
+    #Random Forest classifier
+    model <- train(Mode ~., data = train_data, method = "svmLinearWeights2",
+                   ntree = 100,metric="ROC",
+                    trControl = train.control)
+    print("SVM with class weights fitted!")
+  }
+  else if(clf=='svmR')
+  {
+   # Build smote model
+    
+    train.control$sampling <- "smote"
+    model <- train(Mode ~ .,
+                       data = train_data,
+                       method = "svmRadial",
+                       verbose = FALSE,
+                       metric = "ROC",
+                       trControl = train.control)
+    #support vector machine  -with a Radial basis function
+    #model <- train(Mode ~., data = train_data, method = "svmRadial",
+    #              trControl = train.control)
+    print("SVM radial-basis model fitted..")
+  }
+  else if(clf=='svmL')
+  {
+    #Multinomial Logit
+    model <- train(Mode ~., data = train_data, method = "svmLinear2",
+                    trControl = train.control)
+    print("SVM-with linear kernel fitted..")
+  }
+  else if(clf=='svmP')
+  {
+    #Neural Net
+    model <- train(Mode ~., data = train_data, method = "svmPoly",
+                    trControl = train.control)
+    print("SVM with polynomial kernel fitted..")
+  }
+  else if(clf=='svmRW')
+  {
+    #Gradient Boosting
+    model <- train(Mode ~., data = train_data, method = "svmRadialWeights",
+                    trControl = train.control)
+  
+    print("SVM with radial weights fitted..")
+    }
+  filename = paste("C:/Users/aroy29/Dropbox (ASU)/INTERACT Travel Mode Detection/Results/model outputs/",clf,"_model_results_",featureSet,"_window_size_",window_size,"_june30.rda",sep="")
+  print("Writing model results to file...")
+  save(model,file=filename)
+  print("Completed!")
+  return(model)
+}
 
 #Use Classifier/Feature set combinations to generate outputs for:
 
